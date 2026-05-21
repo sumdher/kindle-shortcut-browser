@@ -1,0 +1,105 @@
+#!/bin/sh
+# Button Handler for Kindle (tested on: Oasis (10th Generation))
+#
+# Back button short press  → decrease brightness
+# Next button short press  → increase brightness
+#
+# Back button long press   → reload current page (via Chrome DevTools Protocol)
+# Next button long press   → stop browser (runs shortcut_stop.sh)
+#
+# Tested on: Kindle Oasis 10th Gen (KOA3), firmware 5.18.2
+
+DEV="/dev/input/event3"
+LONG_PRESS_MS=800
+MIN_BRIGHTNESS=1
+MAX_BRIGHTNESS=24
+
+get_brightness() {
+    lipc-get-prop com.lab126.powerd flIntensity
+}
+
+set_brightness() {
+    lipc-set-prop com.lab126.powerd flIntensity "$1"
+}
+
+decrease_brightness() {
+    current=$(get_brightness)
+    new=$((current - 2))
+    [ "$new" -lt "$MIN_BRIGHTNESS" ] && new=$MIN_BRIGHTNESS
+    set_brightness "$new"
+}
+
+increase_brightness() {
+    current=$(get_brightness)
+    new=$((current + 2))
+    [ "$new" -gt "$MAX_BRIGHTNESS" ] && new=$MAX_BRIGHTNESS
+    set_brightness "$new"
+}
+
+reload_page() {
+    # Read the DevTools port assigned at browser launch
+    port=$(cat /mnt/us/system/browser/kindle_browser/DevToolsActivePort 2>/dev/null | head -1)
+    [ -z "$port" ] && return
+    # Get the page target ID
+    id=$(curl -s http://127.0.0.1:$port/json | grep -o '"id": "[^"]*"' | head -1 | cut -d'"' -f4)
+    [ -z "$id" ] && return
+    # Send Page.reload via WebSocket (CDP)
+    { printf "GET /devtools/page/$id HTTP/1.1\r\nHost: 127.0.0.1:$port\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n"
+      sleep 1
+      printf '\x81\xab\x00\x00\x00\x00{"id":1,"method":"Page.reload","params":{}}'
+      sleep 2
+    } | nc -w 4 127.0.0.1 $port > /dev/null 2>&1
+}
+
+stop_browser() {
+    /mnt/us/documents/shortcut_stop.sh
+}
+
+browser_running() {
+    pgrep -f kindle_browser > /dev/null 2>&1
+}
+
+ms_now() {
+    awk '{printf "%d\n", $1*1000}' /proc/uptime
+}
+
+back_press_time=0
+next_press_time=0
+
+while true; do
+    event=$(dd if="$DEV" bs=16 count=1 2>/dev/null | hexdump -v -e '16/1 "%02X"')
+    type="${event:16:4}"
+    code="${event:20:4}"
+    value="${event:24:8}"
+
+    [ "$type" != "0100" ] && continue
+    browser_running || continue
+
+    if [ "$code" = "6D00" ]; then
+        if [ "$value" = "01000000" ]; then
+            back_press_time=$(ms_now)
+        elif [ "$value" = "00000000" ] && [ "$back_press_time" -gt 0 ]; then
+            now=$(ms_now)
+            elapsed=$((now - back_press_time))
+            if [ "$elapsed" -ge "$LONG_PRESS_MS" ]; then
+                reload_page
+            else
+                decrease_brightness
+            fi
+            back_press_time=0
+        fi
+    elif [ "$code" = "6800" ]; then
+        if [ "$value" = "01000000" ]; then
+            next_press_time=$(ms_now)
+        elif [ "$value" = "00000000" ] && [ "$next_press_time" -gt 0 ]; then
+            now=$(ms_now)
+            elapsed=$((now - next_press_time))
+            if [ "$elapsed" -ge "$LONG_PRESS_MS" ]; then
+                stop_browser
+            else
+                increase_brightness
+            fi
+            next_press_time=0
+        fi
+    fi
+done

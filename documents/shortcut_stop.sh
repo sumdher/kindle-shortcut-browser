@@ -8,6 +8,9 @@ refresh_screen(){
     eips -c &> /dev/null
 }
 refresh_screen
+# kill the button listener process here:
+pkill -f button_handler
+
 killall kindle_browser
 
 echo "Starting gui"

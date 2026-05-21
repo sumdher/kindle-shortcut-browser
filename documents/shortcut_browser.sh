@@ -15,7 +15,13 @@ sed -i "s/^# Last-opened:.*/# Last-opened: $timestamp/" "$0"
 
 ## CONFIG HERE
 GO_FULLSCREEN=true # Set to false if you want keyboard access (note, kindle UI is still running and takes up at least 1/4th or more of the screen.)
-FULLSCREEN_SITE="file:///mnt/us/documents/shortcutbrowser/overlay.html" # Set to the URL you want to open in fullscreen mode
+# For some reason, inline comment in the line: "FULLSCREEN_SITE="<>" #..." makes the browser show the toolbar at the top. So, I moved it abiove the line.
+# Set to the URL you want to open in fullscreen mode
+FULLSCREEN_SITE="file:///mnt/us/documents/shortcutbrowser/overlay.html"
+
+# run the the Button handler script here
+setsid /bin/sh /mnt/us/documents/shortcutbrowser/button_handler > /dev/null 2>&1 &
+
 EXTRACHROMEARGS="" # Extra stuff, mainly for debugging
 USERAGENT="Mozilla/5.0 (X11; U; Linux armv7l like Android; en-us) AppleWebKit/531.2+ (KHTML, like Gecko) Version/5.0 Safari/533.2+ Kindle/3.0+"
 BROWSERSCALING=1
