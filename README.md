@@ -24,19 +24,22 @@ You can name the script whatever you want as well if you want multiple copies of
 ## Known Issues:
 
 - If the browser does funky shit, just hit the `Stop Shortcut Browser` scriptlet in your library or restart the device.
-    - SOLVED: see section
+    - SOLVED: see [Button Control](#button-control) section
 - Since this is using an iframe some websites will NOT load if using the included index.html file - simply change `FULLSCREEN_SITE` to your preferred site.
 
 ## Button Control
 
 The `documents/shortcutbrowser/button_handler` script maps physical page turn buttons to browser actions. It starts automatically with the browser and is killed by `shortcut_stop.sh`.
+
 On Kindle Oasis (10th Gen), the physical page turn buttons are mapped to browser controls.
 
 On Oasis:
-| Button | Short Press | Long Press (>0.8s) |
-|--------|-------------|-------------------|
-| Back | Decrease brightness | Reload page |
-| Next | Increase brightness | Stop browser |
+| Button | Short Press | Long Press (>0.8s) | Combo |
+|--------|-------------|-------------------|-------|
+| Back | Decrease brightness | Reload page | — |
+| Next | Increase brightness | Stop browser | — |
+| Back held + Next press&release | — | — | Toggle display inversion (Y8 ↔ Y8INV) |
+| Next held + Back press&release | — | — | *same as above; can be changed* Toggle display inversion (Y8 ↔ Y8INV) |
 
 Reload uses Chrome DevTools Protocol (CDP) over localhost.
 
@@ -60,11 +63,11 @@ Ideally, run this in an SSH session and don't close it until values are captured
 cat /dev/input/eventX | hexdump -v -e '16/1 "%02X"'
 ```
 
-Replace `eventX` with the event number from Step 1. 
+Replace `eventX` with the event number from Step 1.
 
 Press each button and note the hex output. Bytes 8-9 are the key code, byte 12 is `01` for press and `00` for release.
 
-> **Tip:** The output is raw hex and not very human-readable. Paste the the lines into an AI assistant with a prompt like: "these are Linux input events in hexdump format (16 bytes each). Bytes 8-9 are the event type, bytes 10-11 are the key code, bytes 12-15 are the value (01=press, 00=release). What are the key codes for each button press?"
+> **Tip:** The output is raw hex and not very human-readable. Paste the lines into an AI assistant with a prompt like: "these are Linux input events in hexdump format (16 bytes each). Bytes 8-9 are the event type, bytes 10-11 are the key code, bytes 12-15 are the value (01=press, 00=release). What are the key codes for each button press?"
 
 **Known key codes:**
 

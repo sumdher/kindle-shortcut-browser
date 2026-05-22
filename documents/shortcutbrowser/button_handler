@@ -1,11 +1,12 @@
 #!/bin/sh
 # Button Handler for Kindle (tested on: Oasis (10th Generation))
 #
-# Back button short press  → decrease brightness
-# Next button short press  → increase brightness
-#
-# Back button long press   → reload current page (via Chrome DevTools Protocol)
-# Next button long press   → stop browser (runs shortcut_stop.sh)
+# Back button short press                    → decrease brightness
+# Next button short press                    → increase brightness
+# Back button long press                     → reload current page (CDP)
+# Next button long press                     → stop browser
+# Back held + Next press&release             → toggle display inversion (Y8 ↔ Y8INV)
+# Next held + Back press&release             → toggle display inversion (Y8 ↔ Y8INV)
 #
 # Tested on: Kindle Oasis 10th Gen (KOA3), firmware 5.18.2
 
@@ -37,13 +38,10 @@ increase_brightness() {
 }
 
 reload_page() {
-    # Read the DevTools port assigned at browser launch
     port=$(cat /mnt/us/system/browser/kindle_browser/DevToolsActivePort 2>/dev/null | head -1)
     [ -z "$port" ] && return
-    # Get the page target ID
     id=$(curl -s http://127.0.0.1:$port/json | grep -o '"id": "[^"]*"' | head -1 | cut -d'"' -f4)
     [ -z "$id" ] && return
-    # Send Page.reload via WebSocket (CDP)
     { printf "GET /devtools/page/$id HTTP/1.1\r\nHost: 127.0.0.1:$port\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n"
       sleep 1
       printf '\x81\xab\x00\x00\x00\x00{"id":1,"method":"Page.reload","params":{}}'
@@ -63,8 +61,20 @@ ms_now() {
     awk '{printf "%d\n", $1*1000}' /proc/uptime
 }
 
+toggle_inversion() {
+    current=$(lipc-get-prop com.lab126.winmgr epdcMode 2>/dev/null)
+    if [ "$current" = "Y8INV" ]; then
+        lipc-set-prop com.lab126.winmgr epdcMode Y8
+    else
+        lipc-set-prop com.lab126.winmgr epdcMode Y8INV
+    fi
+}
+
 back_press_time=0
 next_press_time=0
+back_held=0
+next_held=0
+combo_fired=0
 
 while true; do
     event=$(dd if="$DEV" bs=16 count=1 2>/dev/null | hexdump -v -e '16/1 "%02X"')
@@ -75,29 +85,68 @@ while true; do
     [ "$type" != "0100" ] && continue
     browser_running || continue
 
+    # --- BACK BUTTON (6D00) ---
     if [ "$code" = "6D00" ]; then
         if [ "$value" = "01000000" ]; then
+            # Back pressed
+            back_held=1
             back_press_time=$(ms_now)
-        elif [ "$value" = "00000000" ] && [ "$back_press_time" -gt 0 ]; then
-            now=$(ms_now)
-            elapsed=$((now - back_press_time))
-            if [ "$elapsed" -ge "$LONG_PRESS_MS" ]; then
-                reload_page
-            else
-                decrease_brightness
+            # Only reset combo_fired if neither button was already held
+            # (prevents premature reset during active combo)
+            [ "$next_held" = "0" ] && combo_fired=0
+
+        elif [ "$value" = "00000000" ]; then
+            # Back released
+            back_held=0
+            if [ "$combo_fired" = "1" ]; then
+                # This press was consumed by a combo — skip
+                # Only clear combo_fired when both buttons are released
+                [ "$next_held" = "0" ] && combo_fired=0
+            elif [ "$next_held" = "1" ]; then
+                # Next is still held — this is a combo trigger
+                toggle_inversion
+                combo_fired=1
+                back_press_time=0
+            elif [ "$back_press_time" -gt 0 ]; then
+                now=$(ms_now)
+                elapsed=$((now - back_press_time))
+                if [ "$elapsed" -ge "$LONG_PRESS_MS" ]; then
+                    reload_page
+                else
+                    decrease_brightness
+                fi
             fi
             back_press_time=0
         fi
+
+    # --- NEXT BUTTON (6800) ---
     elif [ "$code" = "6800" ]; then
         if [ "$value" = "01000000" ]; then
+            # Next pressed
+            next_held=1
             next_press_time=$(ms_now)
-        elif [ "$value" = "00000000" ] && [ "$next_press_time" -gt 0 ]; then
-            now=$(ms_now)
-            elapsed=$((now - next_press_time))
-            if [ "$elapsed" -ge "$LONG_PRESS_MS" ]; then
-                stop_browser
-            else
-                increase_brightness
+            # Only reset combo_fired if neither button was already held
+            [ "$back_held" = "0" ] && combo_fired=0
+
+        elif [ "$value" = "00000000" ]; then
+            # Next released
+            next_held=0
+            if [ "$combo_fired" = "1" ]; then
+                # This press was consumed by a combo — skip
+                [ "$back_held" = "0" ] && combo_fired=0
+            elif [ "$back_held" = "1" ]; then
+                # Back is still held — this is a combo trigger
+                toggle_inversion
+                combo_fired=1
+                next_press_time=0
+            elif [ "$next_press_time" -gt 0 ]; then
+                now=$(ms_now)
+                elapsed=$((now - next_press_time))
+                if [ "$elapsed" -ge "$LONG_PRESS_MS" ]; then
+                    stop_browser
+                else
+                    increase_brightness
+                fi
             fi
             next_press_time=0
         fi
