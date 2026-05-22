@@ -21,7 +21,7 @@ A new script, `shortcut_stop.sh` is included in case the browser processes get o
 
 You can name the script whatever you want as well if you want multiple copies of it on the home screen.
 
-## Know Issues:
+## Known Issues:
 
 - If the browser does funky shit, just hit the `Stop Shortcut Browser` scriptlet in your library or restart the device.
     - SOLVED: see section
